@@ -78,10 +78,11 @@ struct _directory directory [FS_FILE_MAX_COUNT];
 uint16_t FAT[FS_MAX_BLOCK];
 
 struct fd {
-		uint32_t fileSize;  //打开标志,初始值0，打开以后为了表示打开标志变为: 100+fd
-		uint16_t indexFirstDataBlock;
-		int32_t offset;
-	};
+	char filename[FS_FILENAME_LEN];
+	uint32_t fileSize;  //打开标志,初始值0，打开以后为了表示打开标志变为: 100+fd
+	uint16_t indexFirstDataBlock;
+	int32_t offset;
+};
 
 struct fd FD[FS_OPEN_MAX_COUNT];
 
@@ -464,6 +465,7 @@ int fs_open(const char *filename)
 	/** find a empty item from FD array */
 	for (; positionFD <FS_OPEN_MAX_COUNT; positionFD++) {  
 		if (FD[positionFD].indexFirstDataBlock== 0){
+			strcpy(FD[positionFD].filename, directory[positionDir].filename);
 			FD[positionFD].fileSize =directory[positionDir].fileSize;
 			FD[positionFD].indexFirstDataBlock= directory[positionDir].indexFirstDataBlock;
 			FD[positionFD].offset= 0;
@@ -572,6 +574,7 @@ int fs_lseek(int fd, size_t offset)
 int fs_write(int fd, void *buf, size_t count)
 {
 	char buffer[65536];
+	char *pbuffer = buffer;
 	int indexCurrentBlock =FD[fd].indexFirstDataBlock;
 	//
 	if (fd >= FS_OPEN_MAX_COUNT || fd <0){  
@@ -598,8 +601,14 @@ int fs_write(int fd, void *buf, size_t count)
 		FD[fd].fileSize = FD[fd].offset + count;
 		for (int j=0 ;j< FS_MAX_BLOCK; j++ ){
 			if (FAT[j]==0) {
-				FD[fd].indexFirstDataBlock=j;
-				indexCurrentBlock=j;
+				FD[fd].indexFirstDataBlock=superblock.indexDataBlock+j-1;
+				indexCurrentBlock=FD[fd].indexFirstDataBlock;
+				//indexCurrentBlock=j;
+				for(int32_t namelist =0;namelist<FS_FILE_MAX_COUNT; namelist++){
+					if(strcmp(FD[fd].filename, directory[namelist].filename)==0){
+						directory[namelist].indexFirstDataBlock=FD[fd].indexFirstDataBlock;
+					}
+				}
 				break; 
 			} 
 		}
@@ -611,12 +620,12 @@ int fs_write(int fd, void *buf, size_t count)
 	if (count /BLOCK_SIZE<= (FD[fd].fileSize - FD[fd].offset)/BLOCK_SIZE){ 
 		/** read total file blocks into buffer  */ 
 		for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ ) {
-			if (block_read(indexCurrentBlock, &buffer[i*BLOCK_SIZE])){ 
+			if (block_read(indexCurrentBlock, pbuffer)){ 
 				perror("fs_write:read error\n");
 				return -1;
 			}
 			indexCurrentBlock =FAT[indexCurrentBlock];
-			buf += BLOCK_SIZE;
+			pbuffer += BLOCK_SIZE;
 		}
 
 		/** replace suitable part */
@@ -624,13 +633,15 @@ int fs_write(int fd, void *buf, size_t count)
 
 		/** write back */
 		indexCurrentBlock =FD[fd].indexFirstDataBlock;
+		pbuffer = buffer;  // 11-24
 		for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ ){
-			if (block_write(indexCurrentBlock, &buffer[i*BLOCK_SIZE])){ 
+			if (block_write(indexCurrentBlock, pbuffer)){   //11-24
 			perror("fs_write:read error\n");
 			return -1;
 			}
 			indexCurrentBlock =FAT[indexCurrentBlock];
-			buf += BLOCK_SIZE;
+			pbuffer += BLOCK_SIZE;           //11-24
+			FD[fd].offset += BLOCK_SIZE;   //11-24
 		}
 		return count;
 	}
@@ -659,14 +670,16 @@ int fs_write(int fd, void *buf, size_t count)
 
 		//FD[fd].fileSize = FD[fd].fileSize - FD[fd].offset + count;
 		indexCurrentBlock =FD[fd].indexFirstDataBlock;
+		pbuffer = buffer;  // 11-24
 		/* read total file blocks into buffer  */ 
 		for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ ) {
-			if (block_read(indexCurrentBlock, &buffer[i*BLOCK_SIZE])){ 
+			if (block_read(indexCurrentBlock, pbuffer)){ 
 				perror("fs_mount:read error\n");
 				return -1;
 			}
+			FD[fd].offset += BLOCK_SIZE;
 			indexCurrentBlock =FAT[indexCurrentBlock];
-			buf += BLOCK_SIZE;
+			pbuffer += BLOCK_SIZE;
 		}
 
 		/** replace suitable part */
@@ -675,13 +688,16 @@ int fs_write(int fd, void *buf, size_t count)
 		FD[fd].fileSize = FD[fd].offset + count;
 		/** write back */
 		indexCurrentBlock =FD[fd].indexFirstDataBlock;
-		for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ ) {
-			if (block_write(indexCurrentBlock, &buffer[i*BLOCK_SIZE])){ 
+		pbuffer = buffer;  // 11-24
+		
+		for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ ) {   //11-24
+			if (block_write(indexCurrentBlock, pbuffer)){ 
 				perror("fs_mount:read error\n");
 				return -1;
 			}
 			indexCurrentBlock =FAT[indexCurrentBlock];
-			buf += BLOCK_SIZE;
+			pbuffer += BLOCK_SIZE;  //  11-24
+			FD[fd].offset += BLOCK_SIZE; //11-24
 		}
 		return count;
 	}
@@ -738,6 +754,7 @@ int fs_read(int fd, void *buf, size_t count)
 		//printf("%s\n", pbuffer);
 		indexCurrentBlock =FAT[indexCurrentBlock];
 		pbuffer+=BLOCK_SIZE;
+		FD[fd].offset += BLOCK_SIZE;
 	}
 	//printf("%s\n", buffer);
 	if (count <= FD[fd].fileSize-FD[fd].offset){
