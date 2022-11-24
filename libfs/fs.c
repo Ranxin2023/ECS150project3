@@ -312,7 +312,7 @@ int fs_create(const char *filename)
 	/**   file already exist! */
 	for (int i=0; i <FS_FILE_MAX_COUNT; i++)
 	{
-		if (strcmp(filename,directory[i].filename)==0 ){  
+		if (strncmp(filename,directory[i].filename, strlen(filename)-1)==0 ){  
 			perror("fs_create: file already exist!\n");
 			return -1;
 		}
@@ -323,7 +323,7 @@ int fs_create(const char *filename)
 	{
 		if (directory[i].filename[0]=='\0')
 		{  
-			strncpy(directory[i].filename,filename, strlen(filename)+1);
+			strcpy(directory[i].filename,filename);
 			directory[i].fileSize =0;
 			directory[i].indexFirstDataBlock= FAT_EOC;
 			return 0;
