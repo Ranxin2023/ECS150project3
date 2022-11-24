@@ -101,7 +101,7 @@ int8_t mount=-1;
 
 int fs_mount(const char *diskname)
 {
-
+	//printf("test\n");
 	//  1 :  Open the virtual disk
 	//printf("mount start\n");
 	/*Return: -1 if no FS is currently mounted, or if the virtual disk cannot be closed, or if there are still open file descriptors.*/
@@ -163,7 +163,8 @@ int fs_mount(const char *diskname)
  *
  * Unmount the currently mounted file system and close the underlying virtual
  * disk file.
- *
+ *SEEK	0
+READ	5	DATA	00000
  * Return: -1 if no FS is currently mounted, or if the virtual disk cannot be
  * closed, or if there are still open file descriptors. 0 otherwise.
  */
@@ -207,7 +208,8 @@ int fs_umount(void)
 	for (int i=0; i< FS_OPEN_MAX_COUNT;i++){
 			for (int j=0; j <FS_FILENAME_LEN; j++) directory[i].filename[j]= 0;
 			directory[i].sizeOfFile=0;
-			directory[i].indexFirstDataBlock=0;
+			directory[i].indexFirstDataBlock=0;SEEK	0
+READ	5	DATA	00000
 		}
 	if (block_write(amountFAT+1, &directory[0])){   
 			perror("fs_mount:write error\n");
@@ -295,6 +297,7 @@ int fs_info(void)
 int fs_create(const char *filename)
 {
 	/** if @filename is invalid */ 
+	if(mount==-1)return -1;
 	if (!filename) {
 		fprintf(stderr, "invalid file diskname: %s", filename);
 		return -1;
@@ -568,9 +571,152 @@ int fs_lseek(int fd, size_t offset)
 
 int fs_write(int fd, void *buf, size_t count)
 {
-	char buffer[BLOCK_SIZE*FS_MAX_BLOCK];
+	char buffer[65536];
 	int indexCurrentBlock =FD[fd].indexFirstDataBlock;
 	//
+	if (fd >= FS_OPEN_MAX_COUNT || fd <0){  
+		fprintf(stderr,"fs_write: file descriptor %d is invalid:out of bounds \n",fd);
+		return -1;
+	}
+	if (FD[fd].indexFirstDataBlock == 0 ){  
+		fprintf(stderr, "fs_write: %d is invalid ：not currently open)", fd );
+		return -1;
+	}
+	/** if @buf is NULL*/
+	if ( buf == NULL ){  
+		perror("fs_write: buf is NULL)" );
+		return -1;
+	}
+
+
+
+	/** 0 ===create a new data block */
+	// 11-24   first block 
+	if (FD[fd].indexFirstDataBlock==FAT_EOC) 
+	{
+		for (int j=0 ;j< FS_MAX_BLOCK; j++ ){
+			if (FAT[j]==0) {
+				FD[fd].indexFirstDataBlock=j;
+				indexCurrentBlock=j;
+				break; 
+			} 
+		}
+		/*
+		// middle link block 
+		
+		for (uint32_t i=0 ;i< ((count+-FD[fd].offset)/BLOCK_SIZE-FD[fd].fileSize/BLOCK_SIZE -1); i++ ){
+			for (int j=0 ;j< FS_MAX_BLOCK; j++ ){
+				if (FAT[j]==0) {
+				FAT[indexCurrentBlock]= j;
+				indexCurrentBlock=j;
+				} 
+			}
+		}
+		
+		FAT[indexCurrentBlock]= FAT_EOC;
+
+		
+		indexCurrentBlock =FD[fd].indexFirstDataBlock;
+		for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ ){
+			if (block_write(indexCurrentBlock, &buffer[i*BLOCK_SIZE])){ 
+				perror("fs_write:read error\n");
+				return -1;
+			}
+			indexCurrentBlock =FAT[indexCurrentBlock];
+			buf += BLOCK_SIZE;
+		}
+		return count;
+		*/
+	}
+
+	/** 1 ==========  no need expand =====================*/
+	if (count /BLOCK_SIZE<= (FD[fd].fileSize - FD[fd].offset)/BLOCK_SIZE){ 
+		/** read total file blocks into buffer  */ 
+		for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ ) {
+			if (block_read(indexCurrentBlock, &buffer[i*BLOCK_SIZE])){ 
+				perror("fs_write:read error\n");
+				return -1;
+			}
+			indexCurrentBlock =FAT[indexCurrentBlock];
+			buf += BLOCK_SIZE;
+		}
+
+		/** replace suitable part */
+		memcpy (buffer + FD[fd].offset,buf,count);
+
+		/** write back */
+		indexCurrentBlock =FD[fd].indexFirstDataBlock;
+		for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ ){
+			if (block_write(indexCurrentBlock, &buffer[i*BLOCK_SIZE])){ 
+			perror("fs_write:read error\n");
+			return -1;
+			}
+			indexCurrentBlock =FAT[indexCurrentBlock];
+			buf += BLOCK_SIZE;
+		}
+		return count;
+	}
+
+	/**  2 ==========  NEED Expand file =====================*/
+	else {
+		/** expand file, assum disk has enough free blocks */
+		/** move to last file block */
+		for (uint32_t i=0 ;i< FD[fd].fileSize/BLOCK_SIZE; i++ )
+		indexCurrentBlock =FAT[indexCurrentBlock];
+
+		/** Find a empty Block and add in link : first-fit strategy */
+		for (uint32_t i=0 ;i< ((count+-FD[fd].offset)/BLOCK_SIZE-FD[fd].fileSize/BLOCK_SIZE ); i++ ){
+			for (int j=0 ;j< FS_MAX_BLOCK; j++ ){
+				if (FAT[j]==0) {
+				FAT[indexCurrentBlock]= j;
+				indexCurrentBlock=j;
+				} 
+			}
+		}
+		// last block 
+		FAT[indexCurrentBlock]= FAT_EOC;
+
+		/**================================*/
+
+
+		//FD[fd].fileSize = FD[fd].fileSize - FD[fd].offset + count;
+		indexCurrentBlock =FD[fd].indexFirstDataBlock;
+		/* read total file blocks into buffer  */ 
+		for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ ) {
+			if (block_read(indexCurrentBlock, &buffer[i*BLOCK_SIZE])){ 
+				perror("fs_mount:read error\n");
+				return -1;
+			}
+			indexCurrentBlock =FAT[indexCurrentBlock];
+			buf += BLOCK_SIZE;
+		}
+
+		/** replace suitable part */
+		memcpy (buffer + FD[fd].offset,buf,count);
+
+		FD[fd].fileSize = FD[fd].offset + count; 
+		/** write back */
+		indexCurrentBlock =FD[fd].indexFirstDataBlock;
+		for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ ) {
+			if (block_write(indexCurrentBlock, &buffer[i*BLOCK_SIZE])){ 
+				perror("fs_mount:read error\n");
+				return -1;
+			}
+			indexCurrentBlock =FAT[indexCurrentBlock];
+			buf += BLOCK_SIZE;
+		}
+		return count;
+	}
+}
+
+
+int fs_read(int fd, void *buf, size_t count)
+
+{
+	char buffer[65536];
+	int indexCurrentBlock =FD[fd].indexFirstDataBlock;
+
+	/** if file descriptor @fd is invalid (i.e., out of bounds, or not currently open)*/
 	if (fd >= FS_OPEN_MAX_COUNT || fd <=0){  
 		fprintf(stderr,"fs_read: file descriptor %d is invalid:out of bounds \n",fd);
 		return -1;
@@ -583,58 +729,9 @@ int fs_write(int fd, void *buf, size_t count)
 	if ( buf == NULL ){  
 		perror("fs_read: buf is NULL)" );
 		return -1;
-	}
-	//
-	/** 1 ==========  no need expand =====================*/
-	if (count/BLOCK_SIZE <= (FD[fd].fileSize - FD[fd].offset)/BLOCK_SIZE ){ 
-		/** read total file blocks into buffer  */ 
-		for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ )	{
-			if (block_read(indexCurrentBlock, &buffer[i*BLOCK_SIZE])){ 
-				perror("fs_mount:read error\n");
-				return -1;
-				}	
-			indexCurrentBlock =FAT[indexCurrentBlock];
-			buf += BLOCK_SIZE;
-			}
-			
-		/** replace suitable part */	
-		memcpy (buffer + FD[fd].offset,buf,count);
-		
-		/** write back */
-		indexCurrentBlock =FD[fd].indexFirstDataBlock;
-		for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ ){
-			if (block_write(indexCurrentBlock, &buffer[i*BLOCK_SIZE])){ 
-				perror("fs_mount:read error\n");
-				return -1;
-				}	
-			indexCurrentBlock =FAT[indexCurrentBlock];
-			buf += BLOCK_SIZE;
-			}
-		return count;
-	}
-
-/**  2 ==========  NEED Expand file =====================*/
-else {
-	/** expand file, assum disk has enough free blocks */
-	/** move to last file block */
-	for (uint32_t i=0 ;i< FD[fd].fileSize/BLOCK_SIZE; i++ )
-		indexCurrentBlock =FAT[indexCurrentBlock];
-
-	/** Find a empty Block and add in link : first-fit strategy */
-	for (uint32_t i=0 ;i< ((count+-FD[fd].offset)/BLOCK_SIZE-FD[fd].fileSize/BLOCK_SIZE); i++ ){
-		for (int j=0 ;j< FS_MAX_BLOCK; j++ ){
-			if (FAT[j]==0) {
-				FAT[indexCurrentBlock]= j;
-				indexCurrentBlock=j;
-			} 
 		}
-		FAT[indexCurrentBlock]= FAT_EOC;
-	}
-	
-	
-	//FD[fd].fileSize = FD[fd].fileSize - FD[fd].offset + count;
-	indexCurrentBlock =FD[fd].indexFirstDataBlock;
-	/* read total file blocks into buffer  */ 
+
+	/*  read all file into buffer */
 	for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ )	{
 		if (block_read(indexCurrentBlock, &buffer[i*BLOCK_SIZE])){ 
 			perror("fs_mount:read error\n");
@@ -644,62 +741,12 @@ else {
 		buf += BLOCK_SIZE;
 		}
 		
-	/** replace suitable part */	
-	memcpy (buffer + FD[fd].offset,buf,count);
-	
-	FD[fd].fileSize = FD[fd].offset + count; 
-	/** write back */
-	indexCurrentBlock =FD[fd].indexFirstDataBlock;
-	for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ )	{
-		if (block_write(indexCurrentBlock, &buffer[i*BLOCK_SIZE])){ 
-			perror("fs_mount:read error\n");
-			return -1;
-			}	
-		indexCurrentBlock =FAT[indexCurrentBlock];
-		buf += BLOCK_SIZE;
+	if (count <= FD[fd].fileSize-FD[fd].offset){
+		memcpy (buf, buffer+FD[fd].offset,count);
+		return count;
 		}
-	return count;
-	}
-}
-
-
-int fs_read(int fd, void *buf, size_t count)
-
-{
-char buffer[BLOCK_SIZE*FS_MAX_BLOCK];
-int indexCurrentBlock =FD[fd].indexFirstDataBlock;
-
-/** if file descriptor @fd is invalid (i.e., out of bounds, or not currently open)*/
-if (fd >= FS_OPEN_MAX_COUNT || fd <=0){  
-	fprintf(stderr,"fs_read: file descriptor %d is invalid:out of bounds \n",fd);
-	return -1;
-	}
-if (FD[fd].indexFirstDataBlock == 0 ){  
-	fprintf(stderr, "fs_read: %d is invalid ：not currently open)", fd );
-	return -1;
-	}
-/** if @buf is NULL*/
-if ( buf == NULL ){  
-	perror("fs_read: buf is NULL)" );
-	return -1;
-	}
-
-/*  read all file into buffer */
-for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ )	{
-	if (block_read(indexCurrentBlock, &buffer[i*BLOCK_SIZE])){ 
-		perror("fs_mount:read error\n");
-		return -1;
-		}	
-	indexCurrentBlock =FAT[indexCurrentBlock];
-	buf += BLOCK_SIZE;
-	}
-	
-if (count <= FD[fd].fileSize-FD[fd].offset){
-	memcpy (buf, buffer+FD[fd].offset,count);
-	return count;
-	}
-else {
-	memcpy (buf, buffer+FD[fd].offset,FD[fd].fileSize-FD[fd].offset);
-	return FD[fd].fileSize-FD[fd].offset;
+	else {
+		memcpy (buf, buffer+FD[fd].offset,FD[fd].fileSize-FD[fd].offset);
+		return FD[fd].fileSize-FD[fd].offset;
 	}
 }

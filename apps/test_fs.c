@@ -36,6 +36,7 @@ struct thread_arg {
 
 void thread_fs_script(void *arg)
 {
+	//printf("write begin\n");
 	struct thread_arg *t_arg = arg;
 	struct stat st;
 	char *diskname, *script;
@@ -155,7 +156,7 @@ void thread_fs_script(void *arg)
 		} else if (strcmp(command, "WRITE") == 0) {
 			data_source = command_args[1];
 			data_description = command_args[2];
-
+			//printf("write begin\n");
 			if (strcmp(data_source, "DATA") == 0) {
 				data = data_description;
 				data_size = strlen(data);
