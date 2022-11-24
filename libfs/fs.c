@@ -323,7 +323,7 @@ int fs_create(const char *filename)
 	{
 		if (directory[i].filename[0]=='\0')
 		{  
-			strcpy(directory[i].filename,filename);
+			strncpy(directory[i].filename,filename, strlen(filename)+1);
 			directory[i].fileSize =0;
 			directory[i].indexFirstDataBlock= FAT_EOC;
 			return 0;
