@@ -629,7 +629,7 @@ int fs_write(int fd, void *buf, size_t count)
 		}
 
 		/** replace suitable part */
-		memcpy (buffer + FD[fd].offset,buf,count);
+		memcpy (buffer + FD[fd].offset,buf,count+1);
 
 		/** write back */
 		indexCurrentBlock =FD[fd].indexFirstDataBlock;
@@ -643,6 +643,7 @@ int fs_write(int fd, void *buf, size_t count)
 			pbuffer += BLOCK_SIZE;           //11-24
 			FD[fd].offset += BLOCK_SIZE;   //11-24
 		}
+		//printf("%d\n", FD[fd].indexFirstDataBlock);
 		return count;
 	}
 
@@ -683,7 +684,7 @@ int fs_write(int fd, void *buf, size_t count)
 		}
 
 		/** replace suitable part */
-		memcpy (buffer + FD[fd].offset,buf,count);
+		memcpy (buffer + FD[fd].offset,buf,count+1);
 
 		FD[fd].fileSize = FD[fd].offset + count;
 		/** write back */
@@ -699,6 +700,7 @@ int fs_write(int fd, void *buf, size_t count)
 			pbuffer += BLOCK_SIZE;  //  11-24
 			FD[fd].offset += BLOCK_SIZE; //11-24
 		}
+		//printf("%d\n", FD[fd].indexFirstDataBlock);
 		return count;
 	}
 }
@@ -729,7 +731,7 @@ int fs_read(int fd, void *buf, size_t count)
 	char buffer[65536];
 	char * pbuffer=buffer;
 	int indexCurrentBlock =FD[fd].indexFirstDataBlock;
-
+	//printf("%d\n", FD[fd].indexFirstDataBlock);
 	/** if file descriptor @fd is invalid (i.e., out of bounds, or not currently open)*/
 	if (fd >= FS_OPEN_MAX_COUNT || fd <0){  
 		fprintf(stderr,"fs_read: file descriptor %d is invalid:out of bounds \n",fd);
@@ -746,7 +748,7 @@ int fs_read(int fd, void *buf, size_t count)
 	}
 	//printf("%d, %d\n", FD[fd].fileSize, (int)count);
 	/*  read all file into buffer */
-	for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++){
+	for (uint32_t i=0 ;i< ((FD[fd].fileSize-1)/BLOCK_SIZE+1); i++){
 		if (block_read(indexCurrentBlock, pbuffer)){ 
 			perror("fs_mount:read error\n");
 			return -1;
@@ -756,15 +758,17 @@ int fs_read(int fd, void *buf, size_t count)
 		pbuffer+=BLOCK_SIZE;
 		FD[fd].offset += BLOCK_SIZE;
 	}
+	pbuffer-=BLOCK_SIZE;
+	FD[fd].offset -= BLOCK_SIZE;
 	//printf("%s\n", buffer);
 	if (count <= FD[fd].fileSize-FD[fd].offset){
-		memcpy (buf, buffer+FD[fd].offset,count);
-		//printf("%s\n", buffer);
+		memcpy (buf, buffer+FD[fd].offset,count+1);
+		//printf("%d\n", FD[fd].offset);
 		return count;
 	}
 	else {
-		memcpy (buf, buffer+FD[fd].offset,FD[fd].fileSize-FD[fd].offset);
-		//printf("%s\n", buffer);
+		memcpy (buf, buffer+FD[fd].offset,FD[fd].fileSize-FD[fd].offset+1);
+		//printf("%d\n", FD[fd].offset);
 		return FD[fd].fileSize-FD[fd].offset;
 	}
 }
