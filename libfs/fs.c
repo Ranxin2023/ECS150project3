@@ -573,8 +573,8 @@ int fs_lseek(int fd, size_t offset)
 
 int fs_write(int fd, void *buf, size_t count)
 {
-	char buffer[65536];
-	char *pbuffer = buffer;
+	unsigned char buffer[65536];
+	unsigned char *pbuffer = buffer;
 	int indexCurrentBlock =FD[fd].indexFirstDataBlock;
 	//
 	if (fd >= FS_OPEN_MAX_COUNT || fd <0){  
@@ -728,8 +728,8 @@ int fs_write(int fd, void *buf, size_t count)
 int fs_read(int fd, void *buf, size_t count)
 
 {
-	char buffer[65536];
-	char * pbuffer=buffer;
+	unsigned char buffer[65536];
+	unsigned char * pbuffer=buffer;
 	int indexCurrentBlock =FD[fd].indexFirstDataBlock;
 	//printf("%d\n", FD[fd].indexFirstDataBlock);
 	/** if file descriptor @fd is invalid (i.e., out of bounds, or not currently open)*/
