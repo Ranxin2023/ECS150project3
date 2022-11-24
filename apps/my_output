@@ -3,5 +3,5 @@ CREATE successful.
 OPEN successful.
 Wrote 5 bytes to file.
 SEEK successful.
-0
 Read 5 bytes from file. Compared 5 correct.
+DELETE successful.
