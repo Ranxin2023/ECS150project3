@@ -515,7 +515,7 @@ int fs_stat(int fd)
 	/**  Return: -1 if no FS is currently mounted */
 	
 	/** if file descriptor @fd is invalid (i.e., out of bounds, or not currently open)*/
-	if (fd >= FS_OPEN_MAX_COUNT || fd <=0){  
+	if (fd >= FS_OPEN_MAX_COUNT || fd <0){  
 		fprintf(stderr, "fs_stat: file descriptor %d is invalid:out of bounds \n",fd);
 		return -1;
 	}
@@ -546,7 +546,7 @@ int fs_lseek(int fd, size_t offset)
 	/** Return: -1 if no FS is currently mounted, */
 	if(mount==-1)return -1;
 	/** if file descriptor @fd is invalid (i.e., out of bounds, or not currently open)*/
-	if (fd >= FS_OPEN_MAX_COUNT || fd <=0){  
+	if (fd >= FS_OPEN_MAX_COUNT || fd <0){  
 		fprintf(stderr, "fs_lseek:file descriptor %d is invalid:out of bounds\n", fd);
 		return -1;
 		}
@@ -591,7 +591,7 @@ int fs_write(int fd, void *buf, size_t count)
 
 
 	/** 0 ===create a new data block */
-	// 11-24   first block 
+	// 11-23   first block 
 	if (FD[fd].indexFirstDataBlock==FAT_EOC) 
 	{
 		for (int j=0 ;j< FS_MAX_BLOCK; j++ ){
@@ -601,7 +601,7 @@ int fs_write(int fd, void *buf, size_t count)
 				break; 
 			} 
 		}
-		/*
+		
 		// middle link block 
 		
 		for (uint32_t i=0 ;i< ((count+-FD[fd].offset)/BLOCK_SIZE-FD[fd].fileSize/BLOCK_SIZE -1); i++ ){
@@ -626,11 +626,11 @@ int fs_write(int fd, void *buf, size_t count)
 			buf += BLOCK_SIZE;
 		}
 		return count;
-		*/
+		
 	}
 
 	/** 1 ==========  no need expand =====================*/
-	if (count /BLOCK_SIZE<= (FD[fd].fileSize - FD[fd].offset)/BLOCK_SIZE){ 
+	else if (count /BLOCK_SIZE<= (FD[fd].fileSize - FD[fd].offset)/BLOCK_SIZE){ 
 		/** read total file blocks into buffer  */ 
 		for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ ) {
 			if (block_read(indexCurrentBlock, &buffer[i*BLOCK_SIZE])){ 
