@@ -591,9 +591,11 @@ int fs_write(int fd, void *buf, size_t count)
 
 
 	/** 0 ===create a new data block */
+	 
 	// 11-23   first block 
 	if (FD[fd].indexFirstDataBlock==FAT_EOC) 
 	{
+		FD[fd].fileSize = FD[fd].offset + count;
 		for (int j=0 ;j< FS_MAX_BLOCK; j++ ){
 			if (FAT[j]==0) {
 				FD[fd].indexFirstDataBlock=j;
@@ -602,35 +604,11 @@ int fs_write(int fd, void *buf, size_t count)
 			} 
 		}
 		
-		// middle link block 
-		
-		for (uint32_t i=0 ;i< ((count+-FD[fd].offset)/BLOCK_SIZE-FD[fd].fileSize/BLOCK_SIZE -1); i++ ){
-			for (int j=0 ;j< FS_MAX_BLOCK; j++ ){
-				if (FAT[j]==0) {
-				FAT[indexCurrentBlock]= j;
-				indexCurrentBlock=j;
-				} 
-			}
-		}
-		
-		FAT[indexCurrentBlock]= FAT_EOC;
-
-		
-		indexCurrentBlock =FD[fd].indexFirstDataBlock;
-		for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ ){
-			if (block_write(indexCurrentBlock, &buffer[i*BLOCK_SIZE])){ 
-				perror("fs_write:read error\n");
-				return -1;
-			}
-			indexCurrentBlock =FAT[indexCurrentBlock];
-			buf += BLOCK_SIZE;
-		}
-		return count;
 		
 	}
 
 	/** 1 ==========  no need expand =====================*/
-	else if (count /BLOCK_SIZE<= (FD[fd].fileSize - FD[fd].offset)/BLOCK_SIZE){ 
+	if (count /BLOCK_SIZE<= (FD[fd].fileSize - FD[fd].offset)/BLOCK_SIZE){ 
 		/** read total file blocks into buffer  */ 
 		for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ ) {
 			if (block_read(indexCurrentBlock, &buffer[i*BLOCK_SIZE])){ 
@@ -662,7 +640,7 @@ int fs_write(int fd, void *buf, size_t count)
 		/** expand file, assum disk has enough free blocks */
 		/** move to last file block */
 		for (uint32_t i=0 ;i< FD[fd].fileSize/BLOCK_SIZE; i++ )
-		indexCurrentBlock =FAT[indexCurrentBlock];
+			indexCurrentBlock =FAT[indexCurrentBlock];
 
 		/** Find a empty Block and add in link : first-fit strategy */
 		for (uint32_t i=0 ;i< ((count+-FD[fd].offset)/BLOCK_SIZE-FD[fd].fileSize/BLOCK_SIZE ); i++ ){
@@ -694,7 +672,7 @@ int fs_write(int fd, void *buf, size_t count)
 		/** replace suitable part */
 		memcpy (buffer + FD[fd].offset,buf,count);
 
-		FD[fd].fileSize = FD[fd].offset + count; 
+		FD[fd].fileSize = FD[fd].offset + count;
 		/** write back */
 		indexCurrentBlock =FD[fd].indexFirstDataBlock;
 		for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ ) {
@@ -709,44 +687,67 @@ int fs_write(int fd, void *buf, size_t count)
 	}
 }
 
+/**
+ * fs_read - Read from a file
+ * @fd: File descriptor
+ * @buf: Data buffer to be filled with data
+ * @count: Number of bytes of data to be read
+ *
+ * Attempt to read @count bytes of data from the file referenced by file
+ * descriptor @fd into buffer pointer by @buf. It is assumed that @buf is large
+ * enough to hold at least @count bytes.
+ *
+ * The number of bytes read can be smaller than @count if there are less than
+ * @count bytes until the end of the file (it can even be 0 if the file offset
+ * is at the end of the file). The file offset of the file descriptor is
+ * implicitly incremented by the number of bytes that were actually read.
+ *
+ * Return: -1 if no FS is currently mounted, or if file descriptor @fd is
+ * invalid (out of bounds or not currently open), or if @buf is NULL. Otherwise
+ * return the number of bytes actually read.
+ */
 
 int fs_read(int fd, void *buf, size_t count)
 
 {
 	char buffer[65536];
+	char * pbuffer=buffer;
 	int indexCurrentBlock =FD[fd].indexFirstDataBlock;
 
 	/** if file descriptor @fd is invalid (i.e., out of bounds, or not currently open)*/
-	if (fd >= FS_OPEN_MAX_COUNT || fd <=0){  
+	if (fd >= FS_OPEN_MAX_COUNT || fd <0){  
 		fprintf(stderr,"fs_read: file descriptor %d is invalid:out of bounds \n",fd);
 		return -1;
-		}
+	}
 	if (FD[fd].indexFirstDataBlock == 0 ){  
 		fprintf(stderr, "fs_read: %d is invalid ：not currently open)", fd );
 		return -1;
-		}
+	}
 	/** if @buf is NULL*/
 	if ( buf == NULL ){  
 		perror("fs_read: buf is NULL)" );
 		return -1;
-		}
-
+	}
+	//printf("%d, %d\n", FD[fd].fileSize, (int)count);
 	/*  read all file into buffer */
-	for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++ )	{
-		if (block_read(indexCurrentBlock, &buffer[i*BLOCK_SIZE])){ 
+	for (uint32_t i=0 ;i< (FD[fd].fileSize/BLOCK_SIZE+1); i++){
+		if (block_read(indexCurrentBlock, pbuffer)){ 
 			perror("fs_mount:read error\n");
 			return -1;
-			}	
-		indexCurrentBlock =FAT[indexCurrentBlock];
-		buf += BLOCK_SIZE;
 		}
-		
+		//printf("%s\n", pbuffer);
+		indexCurrentBlock =FAT[indexCurrentBlock];
+		pbuffer+=BLOCK_SIZE;
+	}
+	//printf("%s\n", buffer);
 	if (count <= FD[fd].fileSize-FD[fd].offset){
 		memcpy (buf, buffer+FD[fd].offset,count);
+		//printf("%s\n", buffer);
 		return count;
-		}
+	}
 	else {
 		memcpy (buf, buffer+FD[fd].offset,FD[fd].fileSize-FD[fd].offset);
+		//printf("%s\n", buffer);
 		return FD[fd].fileSize-FD[fd].offset;
 	}
 }

@@ -1,0 +1,8 @@
+MOUNT successful.
+CREATE successful.
+OPEN successful.
+Wrote 5 bytes to file.
+SEEK successful.
+
+Read unexpected data!  read vs given 00000
+DELETE successful.
